@@ -1,0 +1,60 @@
+const DEFAULT_API_BASE_URL = 'http://localhost:3000';
+
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
+
+export const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '');
+
+function resolveApiPath(path) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (normalizedPath.startsWith('/api/')) {
+    return normalizedPath;
+  }
+  return `/api/v1${normalizedPath}`;
+}
+
+export class ApiError extends Error {
+  constructor(message, statusCode, details, requestId) {
+    super(message);
+    this.name = 'ApiError';
+    this.statusCode = statusCode;
+    this.details = details;
+    this.requestId = requestId;
+  }
+}
+
+export async function apiRequest(path, options = {}) {
+  const { method = 'GET', body, token, headers, signal } = options;
+  const requestHeaders = new Headers(headers);
+
+  if (body !== undefined && !requestHeaders.has('content-type')) {
+    requestHeaders.set('content-type', 'application/json');
+  }
+
+  if (token) {
+    requestHeaders.set('authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${resolveApiPath(path)}`, {
+    method,
+    headers: requestHeaders,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  });
+
+  const payload = await response.json().catch(() => undefined);
+
+  if (!response.ok) {
+    throw new ApiError(
+      payload?.error?.message ?? `Request failed with status ${response.status}`,
+      response.status,
+      payload?.error?.details,
+      payload?.requestId,
+    );
+  }
+
+  return payload?.data;
+}
+
+export function isApiError(error) {
+  return error instanceof ApiError;
+}

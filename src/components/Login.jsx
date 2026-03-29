@@ -72,8 +72,8 @@ export default function Login() {
 
         <div className="relative z-10">
           <Link to="/" className="flex items-center gap-2 text-white">
-            <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center font-bold text-xl">+</div>
-            <span className="text-2xl font-bold tracking-tight">Brainiacs</span>
+            <img src="/brainiacsclinics-logo.svg" alt="Brainiacs Clinic Logo" className="w-8 h-8 rounded-full" />
+            <span className="text-2xl font-bold tracking-tight">Brainiacs Clinic</span>
           </Link>
         </div>
 

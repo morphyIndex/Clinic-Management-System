@@ -3,6 +3,7 @@ const DEFAULT_API_BASE_URL = 'http://localhost:3000';
 import { requestTurnstileToken } from './turnstile.js';
 
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
+const protectSafeMethods = import.meta.env.VITE_TURNSTILE_PROTECT_SAFE_METHODS === 'true';
 
 export const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '');
 
@@ -30,45 +31,33 @@ export async function apiRequest(path, options = {}) {
 
   const shouldAttachTurnstile =
     turnstile === true ||
-    (turnstile !== false && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod));
+    (turnstile !== false && (['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod) || protectSafeMethods));
 
-  const executeRequest = async (attachTurnstileToken) => {
-    const requestHeaders = new Headers(headers);
+  const requestHeaders = new Headers(headers);
 
-    if (attachTurnstileToken) {
-      const turnstileToken = await requestTurnstileToken();
-      if (turnstileToken) {
-        requestHeaders.set('x-turnstile-token', turnstileToken);
-      }
+  if (shouldAttachTurnstile) {
+    const turnstileToken = await requestTurnstileToken();
+    if (turnstileToken) {
+      requestHeaders.set('x-turnstile-token', turnstileToken);
     }
-
-    if (body !== undefined && !requestHeaders.has('content-type')) {
-      requestHeaders.set('content-type', 'application/json');
-    }
-
-    if (token) {
-      requestHeaders.set('authorization', `Bearer ${token}`);
-    }
-
-    const response = await fetch(`${API_BASE_URL}${resolveApiPath(path)}`, {
-      method: normalizedMethod,
-      headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    });
-
-    const payload = await response.json().catch(() => undefined);
-    return { response, payload };
-  };
-
-  let { response, payload } = await executeRequest(shouldAttachTurnstile);
-
-  const missingTurnstileToken =
-    response.status === 403 && payload?.error?.message === 'Turnstile token is required';
-
-  if (missingTurnstileToken && !shouldAttachTurnstile) {
-    ({ response, payload } = await executeRequest(true));
   }
+
+  if (body !== undefined && !requestHeaders.has('content-type')) {
+    requestHeaders.set('content-type', 'application/json');
+  }
+
+  if (token) {
+    requestHeaders.set('authorization', `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${resolveApiPath(path)}`, {
+    method: normalizedMethod,
+    headers: requestHeaders,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
+  });
+
+  const payload = await response.json().catch(() => undefined);
 
   if (!response.ok) {
     throw new ApiError(

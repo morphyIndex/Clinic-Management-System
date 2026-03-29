@@ -42,7 +42,7 @@ export function TurnstileProvider({ children }) {
   const containerRef = useRef(null);
   const widgetIdRef = useRef(null);
   const pendingRequestRef = useRef(null);
-  const queueRef = useRef(Promise.resolve());
+  const inFlightTokenPromiseRef = useRef(null);
 
   useEffect(() => {
     if (!isTurnstileEnabled()) {
@@ -69,22 +69,27 @@ export function TurnstileProvider({ children }) {
 
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
-        size: 'invisible',
+        size: 'normal',
+        execution: 'execute',
+        appearance: 'execute',
         callback: (token) => {
           const pendingRequest = pendingRequestRef.current;
           pendingRequestRef.current = null;
+          inFlightTokenPromiseRef.current = null;
           if (widgetIdRef.current !== null) {
             window.turnstile.reset(widgetIdRef.current);
           }
           pendingRequest?.resolve(token);
         },
         'error-callback': () => {
+          inFlightTokenPromiseRef.current = null;
           if (widgetIdRef.current !== null) {
             window.turnstile.reset(widgetIdRef.current);
           }
           rejectPending('Turnstile verification failed. Please try again.');
         },
         'expired-callback': () => {
+          inFlightTokenPromiseRef.current = null;
           if (widgetIdRef.current !== null) {
             window.turnstile.reset(widgetIdRef.current);
           }
@@ -94,26 +99,30 @@ export function TurnstileProvider({ children }) {
     };
 
     configureTurnstileTokenRequester(() => {
-      queueRef.current = queueRef.current.then(
-        () =>
-          new Promise((resolve, reject) => {
-            if (!window.turnstile || widgetIdRef.current === null) {
-              reject(new Error('Turnstile is not ready yet. Please try again.'));
-              return;
-            }
+      if (inFlightTokenPromiseRef.current) {
+        return inFlightTokenPromiseRef.current;
+      }
 
-            pendingRequestRef.current = { resolve, reject };
+      const tokenPromise = new Promise((resolve, reject) => {
+        if (!window.turnstile || widgetIdRef.current === null) {
+          reject(new Error('Turnstile is not ready yet. Please try again.'));
+          return;
+        }
 
-            try {
-              window.turnstile.execute(widgetIdRef.current);
-            } catch (error) {
-              pendingRequestRef.current = null;
-              reject(error instanceof Error ? error : new Error('Turnstile execution failed.'));
-            }
-          }),
-      );
+        pendingRequestRef.current = { resolve, reject };
 
-      return queueRef.current;
+        try {
+          window.turnstile.execute(widgetIdRef.current);
+        } catch (error) {
+          pendingRequestRef.current = null;
+          reject(error instanceof Error ? error : new Error('Turnstile execution failed.'));
+        }
+      }).finally(() => {
+        inFlightTokenPromiseRef.current = null;
+      });
+
+      inFlightTokenPromiseRef.current = tokenPromise;
+      return tokenPromise;
     });
 
     void mountWidget().catch(() => {
@@ -123,6 +132,7 @@ export function TurnstileProvider({ children }) {
     return () => {
       isDisposed = true;
       configureTurnstileTokenRequester(null);
+      inFlightTokenPromiseRef.current = null;
       rejectPending('Turnstile is unavailable.');
       if (widgetIdRef.current !== null && window.turnstile?.remove) {
         window.turnstile.remove(widgetIdRef.current);

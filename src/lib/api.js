@@ -1,5 +1,7 @@
 const DEFAULT_API_BASE_URL = 'http://localhost:3000';
 
+import { requestTurnstileToken } from './turnstile.js';
+
 const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
 
 export const API_BASE_URL = configuredBaseUrl.replace(/\/$/, '');
@@ -23,8 +25,20 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest(path, options = {}) {
-  const { method = 'GET', body, token, headers, signal } = options;
+  const { method = 'GET', body, token, headers, signal, turnstile } = options;
   const requestHeaders = new Headers(headers);
+  const normalizedMethod = method.toUpperCase();
+
+  const shouldAttachTurnstile =
+    turnstile === true ||
+    (turnstile !== false && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(normalizedMethod));
+
+  if (shouldAttachTurnstile) {
+    const turnstileToken = await requestTurnstileToken();
+    if (turnstileToken) {
+      requestHeaders.set('x-turnstile-token', turnstileToken);
+    }
+  }
 
   if (body !== undefined && !requestHeaders.has('content-type')) {
     requestHeaders.set('content-type', 'application/json');
@@ -35,7 +49,7 @@ export async function apiRequest(path, options = {}) {
   }
 
   const response = await fetch(`${API_BASE_URL}${resolveApiPath(path)}`, {
-    method,
+    method: normalizedMethod,
     headers: requestHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,

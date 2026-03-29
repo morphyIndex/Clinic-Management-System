@@ -1,7 +1,30 @@
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function Hero() {
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+
+  const primaryDestination =
+    user?.role === 'clinic_admin' || user?.role === 'platform_admin'
+      ? '/admin'
+      : user?.role === 'patient'
+        ? '/appointments'
+        : user?.role === 'cashier'
+          ? '/billing'
+        : isAuthenticated
+          ? '/records'
+          : '/register';
+
+  const secondaryDestination = !isAuthenticated
+    ? '/login'
+    : user?.role === 'patient'
+      ? '/appointments'
+      : user?.role === 'clinic_admin' || user?.role === 'platform_admin'
+        ? '/admin'
+        : user?.role === 'cashier'
+          ? '/billing'
+        : '/records';
 
   return (
     <section className="bg-slate-50 pt-20 pb-32 px-8">
@@ -16,17 +39,41 @@ export default function Hero() {
         </span>
       </h1>
         <p className="mt-6 text-xl text-slate-600 max-w-2xl mx-auto">
-          Streamline patient records, automate billing, and focus on what matters most: delivering world-class healthcare.
+          Streamline patient records, automate billing, and let patients book appointments and get guided to the right department.
         </p>
         <div className="mt-10 flex gap-4 justify-center">
-          <button 
-            onClick={() => navigate('/login')}
+          <button
+            onClick={() => navigate(primaryDestination)}
             className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-95"
           >
-            Start Free Now
+            {user?.role === 'clinic_admin' || user?.role === 'platform_admin'
+              ? user?.role === 'platform_admin'
+                ? 'Open Platform Console'
+                : 'Open Admin Console'
+              : user?.role === 'patient'
+                ? 'Book Appointment'
+              : user?.role === 'cashier'
+                ? 'Open Cashier Desk'
+              : isAuthenticated
+                ? 'Open Dashboard'
+                : 'Start Free Now'}
           </button>
-          <button className="group bg-white border border-slate-200 text-slate-700 px-8 py-4 rounded-2xl font-bold hover:bg-slate-50 transition active:scale-95">
-            Preview <i class="fa-solid fa-magnifying-glass rotate-90 group-hover:rotate-135 duration-300 ease ml-1"></i>
+          <button
+            onClick={() => navigate(secondaryDestination)}
+            className="group bg-white border border-slate-200 text-slate-700 px-8 py-4 rounded-2xl font-bold hover:bg-slate-50 transition active:scale-95"
+          >
+            {isAuthenticated
+              ? user?.role === 'platform_admin'
+                ? 'Platform Tools'
+                : user?.role === 'clinic_admin'
+                  ? 'Admin Tools'
+                  : user?.role === 'patient'
+                    ? 'Book Appointment'
+                    : user?.role === 'cashier'
+                      ? 'Open Billing'
+                    : 'Open Workspace'
+              : 'Sign In'}{' '}
+            <span className="ml-1 inline-block transition-transform duration-300 ease-out group-hover:translate-x-1">{'->'}</span>
           </button>
         </div>
       </div>

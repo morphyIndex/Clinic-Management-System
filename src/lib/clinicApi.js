@@ -1,4 +1,4 @@
-import { ApiError } from './api.js';
+import { ApiError, apiRequest } from './api.js';
 
 export const CLINIC_SLUG = import.meta.env.VITE_CLINIC_SLUG?.trim() || 'demo-clinic';
 
@@ -225,6 +225,7 @@ function normalizeDoctor(doctor, departments = []) {
     departmentId,
     departmentName,
     specialty: doctor.specialty ?? doctor.departmentName ?? departmentName ?? 'General Practice',
+    consultationFee: doctor.consultationFee ?? null,
     isActive: doctor.isActive ?? true,
     createdAt: doctor.createdAt ?? null,
     updatedAt: doctor.updatedAt ?? null,
@@ -753,6 +754,12 @@ export async function loadTenants(request) {
   return tenants.map(normalizeTenant);
 }
 
+export async function loadPublicClinics() {
+  const payload = await apiRequest('/public/clinics', { turnstile: false });
+  const clinics = Array.isArray(payload) ? payload : [];
+  return clinics.map((c) => ({ _id: c._id, slug: c.slug, name: c.name, address: c.address ?? '' }));
+}
+
 export async function saveTenant(request, tenant) {
   const payload = {
     slug: tenant.slug,
@@ -1050,6 +1057,43 @@ export function formatClinicTime(value, timeZone = DEFAULT_TIMEZONE) {
 
 export function formatShortTime(value) {
   return minutesToTimeString(value);
+}
+
+// ── Medication Catalog ──────────────────────────────────────────────
+
+export async function loadMedications(request) {
+  const payload = await request('/medications');
+  return Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
+}
+
+export async function saveMedication(request, medication) {
+  const body = {
+    name: medication.name,
+    genericName: medication.genericName || undefined,
+    category: medication.category || undefined,
+    defaultDosage: medication.defaultDosage || undefined,
+    defaultFrequency: medication.defaultFrequency || undefined,
+    defaultDuration: medication.defaultDuration || undefined,
+    unitPrice: Number(medication.unitPrice),
+  };
+
+  if (medication._id) {
+    return request(`/medications/${medication._id}`, { method: 'PATCH', body });
+  }
+  return request('/medications', { method: 'POST', body });
+}
+
+export async function removeMedication(request, medicationId) {
+  return request(`/medications/${medicationId}`, { method: 'DELETE' });
+}
+
+// ── Doctor Consultation Fee ─────────────────────────────────────────
+
+export async function setDoctorConsultationFee(request, doctorId, fee) {
+  return request(`/doctors/${doctorId}/consultation-fee`, {
+    method: 'PATCH',
+    body: { consultationFee: fee },
+  });
 }
 
 export function getLocalDepartmentsSnapshot() {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { isApiError } from '../lib/api.js';
 import { appToast } from '../lib/toast.js';
+import { loadMedications, saveMedication, removeMedication } from '../lib/clinicApi.js';
 
 const DISPENSE_OPTIONS = [
   { value: 'pending', label: 'Pending' },
@@ -40,11 +41,34 @@ function formatDateTime(value) {
 
 export default function PharmacyWorkspacePanel({ selectedRecord, onRecordUpdated }) {
   const { request } = useAuth();
+  const [activeTab, setActiveTab] = useState('dispensing');
   const [selectedPrescriptionId, setSelectedPrescriptionId] = useState('');
   const [dispenseStatus, setDispenseStatus] = useState('pending');
   const [dispenseNotes, setDispenseNotes] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Medication catalog state
+  const [medications, setMedications] = useState([]);
+  const [isMedLoading, setIsMedLoading] = useState(false);
+  const [medError, setMedError] = useState('');
+  const [isMedSaving, setIsMedSaving] = useState(false);
+  const [editingMed, setEditingMed] = useState(null);
+  const [medForm, setMedForm] = useState({
+    name: '', genericName: '', category: '', defaultDosage: '', defaultFrequency: '', defaultDuration: '', unitPrice: '',
+  });
+
+  useEffect(() => {
+    if (activeTab !== 'catalog') return;
+    let cancelled = false;
+    setIsMedLoading(true);
+    setMedError('');
+    loadMedications(request)
+      .then((data) => { if (!cancelled) setMedications(data); })
+      .catch((err) => { if (!cancelled) setMedError(getErrorMessage(err, 'Could not load medications.')); })
+      .finally(() => { if (!cancelled) setIsMedLoading(false); });
+    return () => { cancelled = true; };
+  }, [request, activeTab]);
 
   const prescriptions = useMemo(
     () =>
@@ -130,9 +154,53 @@ export default function PharmacyWorkspacePanel({ selectedRecord, onRecordUpdated
     }
   };
 
-  if (!selectedRecord) {
-    return null;
-  }
+  const openCreateMedication = () => {
+    setEditingMed(null);
+    setMedForm({ name: '', genericName: '', category: '', defaultDosage: '', defaultFrequency: '', defaultDuration: '', unitPrice: '' });
+    setMedError('');
+  };
+
+  const openEditMedication = (med) => {
+    setEditingMed(med);
+    setMedForm({
+      name: med.name ?? '',
+      genericName: med.genericName ?? '',
+      category: med.category ?? '',
+      defaultDosage: med.defaultDosage ?? '',
+      defaultFrequency: med.defaultFrequency ?? '',
+      defaultDuration: med.defaultDuration ?? '',
+      unitPrice: String(med.unitPrice ?? ''),
+    });
+    setMedError('');
+  };
+
+  const handleSaveMedication = async (event) => {
+    event.preventDefault();
+    setIsMedSaving(true);
+    setMedError('');
+    try {
+      const result = await saveMedication(request, { ...medForm, _id: editingMed?._id });
+      setMedications((current) =>
+        editingMed ? current.map((m) => (m._id === result._id ? result : m)) : [...current, result],
+      );
+      setEditingMed(null);
+      setMedForm({ name: '', genericName: '', category: '', defaultDosage: '', defaultFrequency: '', defaultDuration: '', unitPrice: '' });
+    } catch (error) {
+      setMedError(getErrorMessage(error, 'The medication could not be saved.'));
+    } finally {
+      setIsMedSaving(false);
+    }
+  };
+
+  const handleDeleteMedication = async (medicationId) => {
+    if (!window.confirm('Remove this medication from the catalog?')) return;
+    try {
+      await removeMedication(request, medicationId);
+      setMedications((current) => current.filter((m) => m._id !== medicationId));
+    } catch (error) {
+      setMedError(getErrorMessage(error, 'The medication could not be removed.'));
+    }
+  };
 
   return (
     <section className="mt-8 rounded-[2rem] border border-slate-100 bg-white p-8 shadow-sm">
@@ -141,22 +209,176 @@ export default function PharmacyWorkspacePanel({ selectedRecord, onRecordUpdated
           <p className="text-xs font-bold uppercase tracking-[0.35em] text-indigo-500">Pharmacy Workspace</p>
           <h2 className="mt-2 text-3xl font-bold text-slate-900">Medication Dispensing</h2>
           <p className="mt-2 text-sm text-slate-500">
-            Review finalized prescriptions and record whether medication was released to the patient.
+            Review finalized prescriptions and manage the medication catalog.
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Ready Prescriptions</p>
-          <p className="mt-1 text-2xl font-bold text-slate-900">
-            {prescriptions.filter((prescription) => prescription.status === 'finalized').length}
-          </p>
+        <div className="flex items-center gap-3">
+          {[
+            { key: 'dispensing', label: 'Dispensing' },
+            { key: 'catalog', label: 'Medication Catalog' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition-all ${
+                activeTab === tab.key
+                  ? 'bg-slate-900 text-white shadow-lg'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {prescriptions.length === 0 ? (
+      {activeTab === 'catalog' && (
+        <div className="mt-8">
+          <form className="rounded-3xl border border-slate-100 bg-slate-50/70 p-6" onSubmit={handleSaveMedication}>
+            <h3 className="text-lg font-bold text-slate-900 mb-4">
+              {editingMed ? 'Edit Medication' : 'Add New Medication'}
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <input
+                required
+                placeholder="Medication name *"
+                value={medForm.name}
+                onChange={(e) => setMedForm((f) => ({ ...f, name: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                placeholder="Generic name"
+                value={medForm.genericName}
+                onChange={(e) => setMedForm((f) => ({ ...f, genericName: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                placeholder="Category"
+                value={medForm.category}
+                onChange={(e) => setMedForm((f) => ({ ...f, category: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                placeholder="Default dosage"
+                value={medForm.defaultDosage}
+                onChange={(e) => setMedForm((f) => ({ ...f, defaultDosage: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                placeholder="Default frequency"
+                value={medForm.defaultFrequency}
+                onChange={(e) => setMedForm((f) => ({ ...f, defaultFrequency: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                placeholder="Default duration"
+                value={medForm.defaultDuration}
+                onChange={(e) => setMedForm((f) => ({ ...f, defaultDuration: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <input
+                required
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Unit price *"
+                value={medForm.unitPrice}
+                onChange={(e) => setMedForm((f) => ({ ...f, unitPrice: e.target.value }))}
+                className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            {medError && (
+              <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
+                {medError}
+              </div>
+            )}
+            <div className="mt-4 flex gap-3">
+              <button
+                type="submit"
+                disabled={isMedSaving}
+                className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:bg-indigo-300"
+              >
+                {isMedSaving ? 'Saving...' : editingMed ? 'Update' : 'Add Medication'}
+              </button>
+              {editingMed && (
+                <button
+                  type="button"
+                  onClick={openCreateMedication}
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+
+          {isMedLoading ? (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+              Loading medications...
+            </div>
+          ) : medications.length === 0 ? (
+            <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-sm text-slate-500">
+              No medications in the catalog yet. Add one above.
+            </div>
+          ) : (
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="p-3 font-semibold">Medication</th>
+                    <th className="p-3 font-semibold">Generic</th>
+                    <th className="p-3 font-semibold">Category</th>
+                    <th className="p-3 font-semibold">Dosage</th>
+                    <th className="p-3 font-semibold">Unit Price</th>
+                    <th className="p-3 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {medications.map((med) => (
+                    <tr key={med._id}>
+                      <td className="p-3 font-semibold text-slate-900">{med.name}</td>
+                      <td className="p-3 text-slate-600">{med.genericName || '—'}</td>
+                      <td className="p-3 text-slate-600">{med.category || '—'}</td>
+                      <td className="p-3 text-slate-600">{med.defaultDosage || '—'}</td>
+                      <td className="p-3 text-slate-600">{Number(med.unitPrice ?? 0).toLocaleString('en-US')}</td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openEditMedication(med)}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => void handleDeleteMedication(med._id)}
+                            className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'dispensing' && !selectedRecord && (
+        <div className="mt-8 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-sm text-slate-500">
+          Select a patient to see their prescriptions for dispensing.
+        </div>
+      )}
+
+      {activeTab === 'dispensing' && selectedRecord && prescriptions.length === 0 && (
         <div className="mt-8 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-sm text-slate-500">
           No prescriptions are attached to this patient yet. Once a doctor saves and finalizes one, it will appear here.
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'dispensing' && selectedRecord && prescriptions.length > 0 && (
         <div className="mt-8 grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
           <section className="rounded-[2rem] border border-slate-100 bg-slate-50/70 p-6">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">

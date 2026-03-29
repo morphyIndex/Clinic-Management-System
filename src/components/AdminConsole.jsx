@@ -12,6 +12,7 @@ import {
   removeDepartment,
   saveDepartment,
   saveWeeklyAvailability,
+  setDoctorConsultationFee,
   toMinutes,
   toTimeString,
 } from '../lib/clinicApi.js';
@@ -130,6 +131,7 @@ function ClinicAdminConsole() {
   const [departmentError, setDepartmentError] = useState('');
   const [isDepartmentSaving, setIsDepartmentSaving] = useState(false);
   const [departmentDrafts, setDepartmentDrafts] = useState({});
+  const [feeDrafts, setFeeDrafts] = useState({});
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [scheduleForm, setScheduleForm] = useState(defaultScheduleForm);
   const [scheduleError, setScheduleError] = useState('');
@@ -160,6 +162,12 @@ function ClinicAdminConsole() {
         setDepartmentDrafts(
           doctorResponse.reduce((acc, doctor) => {
             acc[doctor._id] = doctor.departmentId ?? '';
+            return acc;
+          }, {}),
+        );
+        setFeeDrafts(
+          doctorResponse.reduce((acc, doctor) => {
+            acc[doctor._id] = doctor.consultationFee != null ? String(doctor.consultationFee) : '';
             return acc;
           }, {}),
         );
@@ -296,6 +304,27 @@ function ClinicAdminConsole() {
       );
     } catch (error) {
       setLoadError(getErrorMessage(error, 'The doctor assignment could not be saved.'));
+    }
+  };
+
+  const handleSaveConsultationFee = async (doctorId) => {
+    const raw = feeDrafts[doctorId] ?? '';
+    const fee = raw === '' ? null : Number(raw);
+
+    if (fee !== null && (!Number.isFinite(fee) || fee < 0)) {
+      setLoadError('Enter a valid consultation fee (0 or more) or leave blank to unset.');
+      return;
+    }
+
+    try {
+      await setDoctorConsultationFee(request, doctorId, fee);
+      setDoctors((current) =>
+        current.map((doctor) =>
+          doctor._id === doctorId ? { ...doctor, consultationFee: fee } : doctor,
+        ),
+      );
+    } catch (error) {
+      setLoadError(getErrorMessage(error, 'The consultation fee could not be saved.'));
     }
   };
 
@@ -516,6 +545,35 @@ function ClinicAdminConsole() {
                     Save Assignment
                   </button>
                 </div>
+              </div>
+
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 border-t border-slate-100 pt-4">
+                <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Consultation Fee</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={feeDrafts[doctor._id] ?? ''}
+                  onChange={(event) =>
+                    setFeeDrafts((current) => ({
+                      ...current,
+                      [doctor._id]: event.target.value,
+                    }))
+                  }
+                  className="w-40 rounded-2xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Leave blank to unset"
+                />
+                <button
+                  onClick={() => void handleSaveConsultationFee(doctor._id)}
+                  className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700 hover:bg-indigo-100"
+                >
+                  Save Fee
+                </button>
+                {doctor.consultationFee != null && (
+                  <span className="text-xs text-slate-500">
+                    Current: {Number(doctor.consultationFee).toLocaleString('en-US')}
+                  </span>
+                )}
               </div>
             </article>
           ))}

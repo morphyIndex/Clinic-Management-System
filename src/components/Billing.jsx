@@ -33,7 +33,7 @@ function formatDateTime(value) {
   }).format(new Date(value));
 }
 
-function buildInvoiceQuery(search) {
+function buildInvoiceQuery(search, dateRange) {
   const params = new URLSearchParams({
     pageSize: '50',
   });
@@ -42,7 +42,34 @@ function buildInvoiceQuery(search) {
     params.set('search', search.trim());
   }
 
+  if (dateRange) {
+    if (dateRange.from) params.set('from', dateRange.from);
+    if (dateRange.to) params.set('to', dateRange.to);
+  }
+
   return params.toString();
+}
+
+function getDateRange(preset) {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (preset) {
+    case 'today':
+      return { from: startOfDay.toISOString(), to: new Date(startOfDay.getTime() + 86400000 - 1).toISOString() };
+    case 'week': {
+      const dayOfWeek = startOfDay.getDay();
+      const monday = new Date(startOfDay);
+      monday.setDate(monday.getDate() - ((dayOfWeek + 6) % 7));
+      return { from: monday.toISOString(), to: now.toISOString() };
+    }
+    case 'month':
+      return { from: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), to: now.toISOString() };
+    case 'year':
+      return { from: new Date(now.getFullYear(), 0, 1).toISOString(), to: now.toISOString() };
+    default:
+      return null;
+  }
 }
 
 function getErrorMessage(error, fallbackMessage) {
@@ -260,6 +287,7 @@ export default function Billing() {
   const { request, user } = useAuth();
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebouncedValue(searchInput);
+  const [datePreset, setDatePreset] = useState('all');
   const [dashboard, setDashboard] = useState(null);
   const [invoiceResponse, setInvoiceResponse] = useState({
     items: [],
@@ -291,9 +319,10 @@ export default function Billing() {
       setLoadError('');
 
       try {
+        const range = getDateRange(datePreset);
         const [dashboardResponse, invoices] = await Promise.all([
           request('/reports/dashboard', { signal: controller.signal }),
-          request(`/invoices?${buildInvoiceQuery(debouncedSearch)}`, { signal: controller.signal }),
+          request(`/invoices?${buildInvoiceQuery(debouncedSearch, range)}`, { signal: controller.signal }),
         ]);
 
         setDashboard(dashboardResponse);
@@ -316,7 +345,7 @@ export default function Billing() {
     return () => {
       controller.abort();
     };
-  }, [debouncedSearch, request]);
+  }, [debouncedSearch, datePreset, request]);
 
   const handleRefresh = async () => {
     const controller = new AbortController();
@@ -325,9 +354,10 @@ export default function Billing() {
     setLoadError('');
 
     try {
+      const range = getDateRange(datePreset);
       const [dashboardResponse, invoices] = await Promise.all([
         request('/reports/dashboard', { signal: controller.signal }),
-        request(`/invoices?${buildInvoiceQuery(debouncedSearch)}`, { signal: controller.signal }),
+        request(`/invoices?${buildInvoiceQuery(debouncedSearch, range)}`, { signal: controller.signal }),
       ]);
       setDashboard(dashboardResponse);
       setInvoiceResponse(invoices);
@@ -513,15 +543,38 @@ export default function Billing() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-        <div className="border-b border-slate-100 bg-slate-50/60 p-4 flex flex-col md:flex-row md:items-center gap-3">
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search invoices by invoice number..."
-            className="w-full md:w-96 rounded-2xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          {isLoading && <span className="text-sm font-medium text-slate-500">Syncing invoice feed...</span>}
+        <div className="border-b border-slate-100 bg-slate-50/60 p-4 flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search invoices by invoice number..."
+              className="w-full md:w-96 rounded-2xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            {isLoading && <span className="text-sm font-medium text-slate-500">Syncing invoice feed...</span>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'today', label: 'Today' },
+              { key: 'week', label: 'This Week' },
+              { key: 'month', label: 'This Month' },
+              { key: 'year', label: 'This Year' },
+            ].map((preset) => (
+              <button
+                key={preset.key}
+                onClick={() => setDatePreset(preset.key)}
+                className={`rounded-2xl px-4 py-2 text-sm font-bold transition-all ${
+                  datePreset === preset.key
+                    ? 'bg-slate-900 text-white shadow'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="overflow-x-auto">

@@ -69,9 +69,7 @@ export function TurnstileProvider({ children }) {
 
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
-        size: 'normal',
-        execution: 'execute',
-        appearance: 'execute',
+        size: 'invisible',
         callback: (token) => {
           const pendingRequest = pendingRequestRef.current;
           pendingRequestRef.current = null;
@@ -143,7 +141,7 @@ export function TurnstileProvider({ children }) {
   return (
     <>
       {children}
-      <div ref={containerRef} style={{ position: 'fixed', inset: 0, pointerEvents: 'none', opacity: 0 }} />
+      <div ref={containerRef} />
     </>
   );
 }

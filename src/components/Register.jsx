@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiRequest, isApiError } from '../lib/api.js';
-import { CLINIC_SLUG } from '../lib/clinicApi.js';
+import { CLINIC_SLUG, loadPublicClinics } from '../lib/clinicApi.js';
 
 const initialForm = {
   firstName: '',
@@ -33,6 +33,23 @@ export default function Register() {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clinics, setClinics] = useState([]);
+  const [selectedSlug, setSelectedSlug] = useState(CLINIC_SLUG);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPublicClinics()
+      .then((list) => {
+        if (!cancelled && list.length > 0) {
+          setClinics(list);
+          if (!list.some((c) => c.slug === selectedSlug)) {
+            setSelectedSlug(list[0].slug);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -41,7 +58,7 @@ export default function Register() {
     setIsSubmitting(true);
 
     try {
-      await apiRequest(`/public/clinics/${CLINIC_SLUG}/patients/register`, {
+      await apiRequest(`/public/clinics/${encodeURIComponent(selectedSlug)}/patients/register`, {
         method: 'POST',
         auth: false,
         body: {
@@ -107,6 +124,24 @@ export default function Register() {
           </div>
 
           <form className="space-y-6" onSubmit={handleSubmit}>
+            {clinics.length > 1 && (
+              <label className="block space-y-2">
+                <span className="text-sm font-bold text-slate-700">Clinic Branch</span>
+                <select
+                  required
+                  value={selectedSlug}
+                  onChange={(event) => setSelectedSlug(event.target.value)}
+                  className="w-full px-4 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:bg-white outline-none transition-all"
+                >
+                  {clinics.map((clinic) => (
+                    <option key={clinic.slug} value={clinic.slug}>
+                      {clinic.name}{clinic.address ? ` — ${clinic.address}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <div className="grid md:grid-cols-2 gap-4">
               <label className="block space-y-2">
                 <span className="text-sm font-bold text-slate-700">First Name</span>

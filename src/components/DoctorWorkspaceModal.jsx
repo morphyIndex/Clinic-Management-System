@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { isApiError } from '../lib/api.js';
+import { loadMedications } from '../lib/clinicApi.js';
+
 
 const emptyPrescriptionItem = () => ({
+  medicationId: '',
   medicineName: '',
   dosage: '',
   frequency: '',
@@ -83,6 +86,7 @@ function buildPrescriptionForm(prescription) {
     items:
       Array.isArray(prescription.items) && prescription.items.length > 0
         ? prescription.items.map((item) => ({
+          medicationId: item.medicationId ?? '',
           medicineName: item.medicineName ?? '',
           dosage: item.dosage ?? '',
           frequency: item.frequency ?? '',
@@ -112,7 +116,7 @@ function findPrescriptionForEncounter(record, encounterId) {
 }
 
 export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }) {
-  const { request } = useAuth();
+  const { request, user } = useAuth();
   const [selectedAppointmentId, setSelectedAppointmentId] = useState('');
   const [encounterForm, setEncounterForm] = useState(emptyEncounterForm);
   const [prescriptionForm, setPrescriptionForm] = useState(emptyPrescriptionForm);
@@ -122,6 +126,18 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
   const [isEncounterSaving, setIsEncounterSaving] = useState(false);
   const [isPrescriptionSaving, setIsPrescriptionSaving] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [medications, setMedications] = useState([]);
+  const [medSearches, setMedSearches] = useState({});
+
+  const hasFixedFee = user?.consultationFee != null && user.consultationFee > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMedications(request)
+      .then((data) => { if (!cancelled) setMedications(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [request]);
 
   const appointments = Array.isArray(selectedRecord?.appointments)
     ? selectedRecord.appointments.filter((appointment) => appointment.status !== 'cancelled')
@@ -248,15 +264,21 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
     }
 
     const normalizedItems = prescriptionForm.items
-      .map((item) => ({
-        medicineName: item.medicineName.trim(),
-        dosage: item.dosage.trim(),
-        frequency: item.frequency.trim(),
-        duration: item.duration.trim(),
-        quantity: item.quantity === '' ? '' : Number(item.quantity),
-        unitPrice: item.unitPrice === '' ? 0 : Number(item.unitPrice),
-        instructions: item.instructions.trim(),
-      }))
+      .map((item) => {
+        const catalogMed = item.medicationId
+          ? medications.find((m) => m._id === item.medicationId)
+          : null;
+        return {
+          medicationId: item.medicationId || undefined,
+          medicineName: item.medicineName.trim(),
+          dosage: item.dosage.trim(),
+          frequency: item.frequency.trim(),
+          duration: item.duration.trim(),
+          quantity: item.quantity === '' ? '' : Number(item.quantity),
+          unitPrice: catalogMed ? Number(catalogMed.unitPrice) : (item.unitPrice === '' ? 0 : Number(item.unitPrice)),
+          instructions: item.instructions.trim(),
+        };
+      })
       .filter((item) => item.medicineName || item.dosage || item.frequency || item.duration || item.instructions);
 
     if (normalizedItems.length === 0) {
@@ -370,50 +392,50 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                 </div>
               )}
 
-              <form className="mt-6 space-y-5" onSubmit={handleSaveEncounter}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-2">
+              <form className="mt-6 space-y-4" onSubmit={handleSaveEncounter}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Chief Complaint</span>
                     <textarea
-                      rows="4"
+                      rows="2"
                       value={encounterForm.chiefComplaint}
                       disabled={isEncounterLocked}
                       onChange={(event) =>
                         setEncounterForm((current) => ({ ...current, chiefComplaint: event.target.value }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                      placeholder="Patient's primary concern or presenting problem..."
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      placeholder="Primary concern..."
                     />
                   </label>
-                  <label className="space-y-2">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Diagnosis</span>
                     <textarea
-                      rows="4"
+                      rows="2"
                       value={encounterForm.diagnosis}
                       disabled={isEncounterLocked}
                       onChange={(event) =>
                         setEncounterForm((current) => ({ ...current, diagnosis: event.target.value }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                      placeholder="Working diagnosis or confirmed diagnosis..."
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      placeholder="Diagnosis..."
                     />
                   </label>
                 </div>
 
-                <label className="space-y-2 block">
+                <label className="space-y-1.5 block">
                   <span className="text-sm font-bold text-slate-700">Clinical Notes</span>
                   <textarea
-                    rows="5"
+                    rows="2"
                     value={encounterForm.notes}
                     disabled={isEncounterLocked}
                     onChange={(event) => setEncounterForm((current) => ({ ...current, notes: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                    placeholder="Assessment, examination findings, and treatment plan..."
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                    placeholder="Assessment, findings, and plan..."
                   />
                 </label>
 
-                <div className="grid gap-4 md:grid-cols-5">
-                  <label className="space-y-2">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Blood Pressure</span>
                     <input
                       value={encounterForm.vitals.bloodPressure}
@@ -424,11 +446,11 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                           vitals: { ...current.vitals, bloodPressure: event.target.value },
                         }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                       placeholder="120/80"
                     />
                   </label>
-                  <label className="space-y-2">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Heart Rate</span>
                     <input
                       value={encounterForm.vitals.heartRate}
@@ -439,11 +461,11 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                           vitals: { ...current.vitals, heartRate: event.target.value },
                         }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                       placeholder="72 bpm"
                     />
                   </label>
-                  <label className="space-y-2">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Temperature</span>
                     <input
                       value={encounterForm.vitals.temperature}
@@ -454,11 +476,11 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                           vitals: { ...current.vitals, temperature: event.target.value },
                         }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                       placeholder="37 C"
                     />
                   </label>
-                  <label className="space-y-2">
+                  <label className="space-y-1.5">
                     <span className="text-sm font-bold text-slate-700">Weight</span>
                     <input
                       value={encounterForm.vitals.weight}
@@ -469,11 +491,18 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                           vitals: { ...current.vitals, weight: event.target.value },
                         }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                       placeholder="65 kg"
                     />
                   </label>
-                  <label className="space-y-2">
+                </div>
+
+                {hasFixedFee ? (
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-700">
+                    Consultation fee: <strong>{Number(user.consultationFee).toLocaleString('en-US')}</strong> (set by admin)
+                  </div>
+                ) : (
+                  <label className="space-y-1.5 block">
                     <span className="text-sm font-bold text-slate-700">Consultation Fee</span>
                     <input
                       type="number"
@@ -484,11 +513,11 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                       onChange={(event) =>
                         setEncounterForm((current) => ({ ...current, consultationFee: event.target.value }))
                       }
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                      className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
                       placeholder="15000"
                     />
                   </label>
-                </div>
+                )}
 
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
                   <p className="font-semibold text-slate-900">Encounter Status</p>
@@ -534,181 +563,237 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                 </span>
               </div>
 
-              <form className="mt-6 space-y-5" onSubmit={handleSavePrescription}>
-                <label className="space-y-2 block">
+              <form className="mt-6 space-y-4" onSubmit={handleSavePrescription}>
+                <label className="space-y-1.5 block">
                   <span className="text-sm font-bold text-slate-700">Prescription Notes</span>
                   <textarea
-                    rows="4"
+                    rows="2"
                     value={prescriptionForm.notes}
                     disabled={isPrescriptionLocked}
                     onChange={(event) => setPrescriptionForm((current) => ({ ...current, notes: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                    placeholder="Special instructions, follow-up advice, or counseling notes..."
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                    placeholder="Special instructions or counseling notes..."
                   />
                 </label>
 
-                <div className="space-y-4">
-                  {prescriptionForm.items.map((item, index) => (
-                    <article key={`prescription-item-${index}`} className="rounded-3xl border border-slate-100 bg-slate-50/80 p-4">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Medicine</span>
-                          <input
-                            value={item.medicineName}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index
-                                    ? { ...currentItem, medicineName: event.target.value }
-                                    : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="Amoxicillin"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Dosage</span>
-                          <input
-                            value={item.dosage}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index ? { ...currentItem, dosage: event.target.value } : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="500 mg"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Frequency</span>
-                          <input
-                            value={item.frequency}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index
-                                    ? { ...currentItem, frequency: event.target.value }
-                                    : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="Twice daily"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Duration</span>
-                          <input
-                            value={item.duration}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index
-                                    ? { ...currentItem, duration: event.target.value }
-                                    : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="5 days"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Quantity</span>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={item.quantity}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index
-                                    ? { ...currentItem, quantity: event.target.value }
-                                    : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="10"
-                          />
-                        </label>
-                        <label className="space-y-2">
-                          <span className="text-sm font-bold text-slate-700">Unit Price</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.unitPrice}
-                            disabled={isPrescriptionLocked}
-                            onChange={(event) =>
-                              setPrescriptionForm((current) => ({
-                                ...current,
-                                items: current.items.map((currentItem, currentIndex) =>
-                                  currentIndex === index
-                                    ? { ...currentItem, unitPrice: event.target.value }
-                                    : currentItem,
-                                ),
-                              }))
-                            }
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                            placeholder="1500"
-                          />
-                        </label>
-                      </div>
+                <div className="space-y-3">
+                  {prescriptionForm.items.map((item, index) => {
+                    const searchTerm = medSearches[index] ?? '';
+                    const filteredMeds = searchTerm.length > 0
+                      ? medications.filter((m) =>
+                          m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (m.genericName ?? '').toLowerCase().includes(searchTerm.toLowerCase())
+                        ).slice(0, 8)
+                      : [];
+                    const catalogMed = item.medicationId
+                      ? medications.find((m) => m._id === item.medicationId)
+                      : null;
 
-                      <label className="mt-4 block space-y-2">
-                        <span className="text-sm font-bold text-slate-700">Instructions</span>
-                        <textarea
-                          rows="3"
-                          value={item.instructions}
-                          disabled={isPrescriptionLocked}
-                          onChange={(event) =>
-                            setPrescriptionForm((current) => ({
-                              ...current,
-                              items: current.items.map((currentItem, currentIndex) =>
-                                currentIndex === index
-                                  ? { ...currentItem, instructions: event.target.value }
-                                  : currentItem,
-                              ),
-                            }))
-                          }
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
-                          placeholder="Take after meals. Return if symptoms do not improve."
-                        />
-                      </label>
+                    return (
+                      <article key={`prescription-item-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-3">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <div className="relative space-y-1.5">
+                            <span className="text-sm font-bold text-slate-700">Medicine</span>
+                            <input
+                              value={item.medicineName}
+                              disabled={isPrescriptionLocked}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setMedSearches((s) => ({ ...s, [index]: value }));
+                                setPrescriptionForm((current) => ({
+                                  ...current,
+                                  items: current.items.map((ci, ci2) =>
+                                    ci2 === index ? { ...ci, medicineName: value, medicationId: '' } : ci,
+                                  ),
+                                }));
+                              }}
+                              onFocus={() => {
+                                if (item.medicineName) {
+                                  setMedSearches((s) => ({ ...s, [index]: item.medicineName }));
+                                }
+                              }}
+                              onBlur={() => setTimeout(() => setMedSearches((s) => ({ ...s, [index]: '' })), 200)}
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                              placeholder="Search or type medicine name..."
+                            />
+                            {filteredMeds.length > 0 && (
+                              <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                                {filteredMeds.map((med) => (
+                                  <li
+                                    key={med._id}
+                                    onMouseDown={() => {
+                                      setPrescriptionForm((current) => ({
+                                        ...current,
+                                        items: current.items.map((ci, ci2) =>
+                                          ci2 === index
+                                            ? {
+                                                ...ci,
+                                                medicationId: med._id,
+                                                medicineName: med.name,
+                                                dosage: ci.dosage || med.defaultDosage || '',
+                                                frequency: ci.frequency || med.defaultFrequency || '',
+                                                duration: ci.duration || med.defaultDuration || '',
+                                                unitPrice: String(med.unitPrice ?? ''),
+                                              }
+                                            : ci,
+                                        ),
+                                      }));
+                                      setMedSearches((s) => ({ ...s, [index]: '' }));
+                                    }}
+                                    className="cursor-pointer px-3 py-2 text-sm hover:bg-indigo-50"
+                                  >
+                                    <span className="font-medium text-slate-900">{med.name}</span>
+                                    {med.genericName && (
+                                      <span className="ml-1 text-xs text-slate-500">({med.genericName})</span>
+                                    )}
+                                    <span className="ml-auto float-right text-xs text-slate-400">
+                                      {Number(med.unitPrice).toLocaleString('en-US')}
+                                    </span>
+                                  </li>
+                                ))}
+                                <li
+                                  onMouseDown={() => {
+                                    setMedSearches((s) => ({ ...s, [index]: '' }));
+                                  }}
+                                  className="cursor-pointer border-t border-slate-100 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+                                >
+                                  Use custom name &ldquo;{searchTerm}&rdquo;
+                                </li>
+                              </ul>
+                            )}
+                            {catalogMed && (
+                              <p className="text-xs text-indigo-500 mt-0.5">
+                                {catalogMed.genericName ? `${catalogMed.genericName} · ` : ''}Price: {Number(catalogMed.unitPrice).toLocaleString('en-US')}
+                              </p>
+                            )}
+                          </div>
+                          <label className="space-y-1.5">
+                            <span className="text-sm font-bold text-slate-700">Dosage</span>
+                            <input
+                              value={item.dosage}
+                              disabled={isPrescriptionLocked}
+                              onChange={(event) =>
+                                setPrescriptionForm((current) => ({
+                                  ...current,
+                                  items: current.items.map((ci, ci2) =>
+                                    ci2 === index ? { ...ci, dosage: event.target.value } : ci,
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                              placeholder="500 mg"
+                            />
+                          </label>
+                          <label className="space-y-1.5">
+                            <span className="text-sm font-bold text-slate-700">Frequency</span>
+                            <input
+                              value={item.frequency}
+                              disabled={isPrescriptionLocked}
+                              onChange={(event) =>
+                                setPrescriptionForm((current) => ({
+                                  ...current,
+                                  items: current.items.map((ci, ci2) =>
+                                    ci2 === index ? { ...ci, frequency: event.target.value } : ci,
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                              placeholder="Twice daily"
+                            />
+                          </label>
+                          <label className="space-y-1.5">
+                            <span className="text-sm font-bold text-slate-700">Duration</span>
+                            <input
+                              value={item.duration}
+                              disabled={isPrescriptionLocked}
+                              onChange={(event) =>
+                                setPrescriptionForm((current) => ({
+                                  ...current,
+                                  items: current.items.map((ci, ci2) =>
+                                    ci2 === index ? { ...ci, duration: event.target.value } : ci,
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                              placeholder="5 days"
+                            />
+                          </label>
+                          <label className="space-y-1.5">
+                            <span className="text-sm font-bold text-slate-700">Quantity</span>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={item.quantity}
+                              disabled={isPrescriptionLocked}
+                              onChange={(event) =>
+                                setPrescriptionForm((current) => ({
+                                  ...current,
+                                  items: current.items.map((ci, ci2) =>
+                                    ci2 === index ? { ...ci, quantity: event.target.value } : ci,
+                                  ),
+                                }))
+                              }
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                              placeholder="10"
+                            />
+                          </label>
+                          {!catalogMed && (
+                            <label className="space-y-1.5">
+                              <span className="text-sm font-bold text-slate-700">Unit Price</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.unitPrice}
+                                disabled={isPrescriptionLocked}
+                                onChange={(event) =>
+                                  setPrescriptionForm((current) => ({
+                                    ...current,
+                                    items: current.items.map((ci, ci2) =>
+                                      ci2 === index ? { ...ci, unitPrice: event.target.value } : ci,
+                                    ),
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                                placeholder="1500"
+                              />
+                            </label>
+                          )}
+                        </div>
 
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="button"
-                          disabled={isPrescriptionLocked || prescriptionForm.items.length === 1}
-                          onClick={() =>
-                            setPrescriptionForm((current) => ({
-                              ...current,
-                              items: current.items.filter((_, currentIndex) => currentIndex !== index),
-                            }))
-                          }
-                          className="text-sm font-bold text-slate-500 transition hover:text-red-600 disabled:cursor-not-allowed disabled:text-slate-300"
-                        >
-                          Remove medicine
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                        <div className="mt-2 flex items-center gap-3">
+                          <input
+                            value={item.instructions}
+                            disabled={isPrescriptionLocked}
+                            onChange={(event) =>
+                              setPrescriptionForm((current) => ({
+                                ...current,
+                                items: current.items.map((ci, ci2) =>
+                                  ci2 === index ? { ...ci, instructions: event.target.value } : ci,
+                                ),
+                              }))
+                            }
+                            className="flex-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100"
+                            placeholder="Instructions (e.g., take after meals)"
+                          />
+                          <button
+                            type="button"
+                            disabled={isPrescriptionLocked || prescriptionForm.items.length === 1}
+                            onClick={() =>
+                              setPrescriptionForm((current) => ({
+                                ...current,
+                                items: current.items.filter((_, i) => i !== index),
+                              }))
+                            }
+                            className="text-sm font-bold text-slate-400 transition hover:text-red-500 disabled:cursor-not-allowed disabled:text-slate-200"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -721,14 +806,14 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                         items: [...current.items, emptyPrescriptionItem()],
                       }))
                     }
-                    className="rounded-2xl border border-slate-200 bg-white px-5 py-3 font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
                   >
                     + Add Medicine
                   </button>
                   <button
                     type="submit"
                     disabled={!selectedEncounter?._id || isPrescriptionSaving || isPrescriptionLocked}
-                    className="rounded-2xl bg-indigo-600 px-5 py-3 font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                    className="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
                   >
                     {isPrescriptionSaving ? 'Saving...' : 'Save Prescription'}
                   </button>

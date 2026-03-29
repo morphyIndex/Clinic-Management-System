@@ -32,10 +32,8 @@ export default function Navbar() {
     <nav className="sticky top-0 w-full z-50 bg-white/80 backdrop-blur-lg border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold">+</span>
-          </div>
-          <span className="font-bold text-xl tracking-tight text-slate-900">Brainiacs</span>
+          <img src="/brainiacsclinics-logo.svg" alt="Brainiacs Clinic Logo" className="w-8 h-8 rounded-full" />
+          <span className="font-bold text-xl tracking-tight text-slate-900">Brainiacs Clinic</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 p-2 text-sm font-medium text-slate-600 shadow-sm">

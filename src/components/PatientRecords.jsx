@@ -149,6 +149,33 @@ function ButtonSpinner() {
   );
 }
 
+function SummaryBulletList({ items, tone = 'default' }) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return (
+      <p className="text-sm text-slate-500">
+        No details available yet.
+      </p>
+    );
+  }
+
+  const bulletTone = tone === 'warning'
+    ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : 'border-slate-200 bg-white text-slate-700';
+
+  return (
+    <ul className="space-y-2">
+      {items.map((item, index) => (
+        <li
+          key={`${item}-${index}`}
+          className={`rounded-2xl border px-3 py-2 text-sm leading-6 ${bulletTone}`}
+        >
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function PatientRecords() {
   const { request, user } = useAuth();
   const navigate = useNavigate();
@@ -176,6 +203,9 @@ export default function PatientRecords() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiSummaryError, setAiSummaryError] = useState('');
+  const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false);
   const detailSectionRef = useRef(null);
 
   const isPharmacist = user?.role === 'pharmacist';
@@ -256,6 +286,9 @@ export default function PatientRecords() {
 
   useEffect(() => {
     handleClosePreview();
+    setAiSummary(null);
+    setAiSummaryError('');
+    setIsAiSummaryLoading(false);
     // We only want to reset preview state when the selected patient changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRecord?.patient?._id]);
@@ -400,6 +433,32 @@ export default function PatientRecords() {
 
     return loadPatientRecord(patientId, 'detail');
   }, [loadPatientRecord, routePatientId, selectedPatientId]);
+
+  const handleGenerateAiSummary = useCallback(async () => {
+    const patientId = selectedRecord?.patient?._id ?? routePatientId ?? selectedPatientId;
+    if (!patientId) {
+      return null;
+    }
+
+    setIsAiSummaryLoading(true);
+    setAiSummaryError('');
+
+    try {
+      const response = await request(`/patients/${patientId}/ai-summary`);
+      setAiSummary(response);
+      return response;
+    } catch (error) {
+      const message = getErrorMessage(error, 'The AI patient brief could not be generated.');
+      setAiSummaryError(message);
+      appToast.error({
+        title: 'AI brief unavailable',
+        description: message,
+      });
+      return null;
+    } finally {
+      setIsAiSummaryLoading(false);
+    }
+  }, [request, routePatientId, selectedPatientId, selectedRecord?.patient?._id]);
 
   const loadAttachmentBlob = async (attachment) => {
     const response = await request(`/attachments/${attachment._id}/content`);
@@ -653,6 +712,174 @@ export default function PatientRecords() {
           </div>
 
           <div className="mt-8 space-y-6">
+            {canManageClinicalNotes && (
+              <section className="rounded-[1.75rem] border border-indigo-100 bg-[linear-gradient(180deg,#f8faff_0%,#ffffff_100%)] p-6 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.22em] text-indigo-500">AI Clinical Brief</p>
+                    <h3 className="mt-2 text-2xl font-bold text-slate-900">Patient summary for doctors</h3>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                      Generate a concise visit brief from this patient&apos;s appointments, encounters, prescriptions, and uploaded PDF or image files.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void handleGenerateAiSummary()}
+                    disabled={isAiSummaryLoading}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {isAiSummaryLoading && <ButtonSpinner />}
+                    {isAiSummaryLoading
+                      ? 'Generating brief...'
+                      : aiSummary
+                        ? 'Refresh AI Brief'
+                        : 'Generate AI Brief'}
+                  </button>
+                </div>
+
+                {aiSummaryError && (
+                  <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                    {aiSummaryError}
+                  </div>
+                )}
+
+                {!aiSummary && !isAiSummaryLoading && !aiSummaryError && (
+                  <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-white/85 px-4 py-5 text-sm text-slate-500">
+                    No AI brief has been generated for this patient yet.
+                  </div>
+                )}
+
+                {isAiSummaryLoading && !aiSummary && (
+                  <div className="mt-5 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-5 text-sm font-medium text-slate-600">
+                    <LoadingSpinner inline label="Preparing the doctor summary..." />
+                  </div>
+                )}
+
+                {aiSummary && (
+                  <div className="mt-5 space-y-5">
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Source</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {aiSummary.provider}
+                          {aiSummary.model ? ` • ${aiSummary.model}` : ''}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Generated</p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{formatDateTime(aiSummary.generatedAt)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Files Analyzed</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{aiSummary.analyzedAttachments?.length ?? 0}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Skipped Files</p>
+                        <p className="mt-2 text-2xl font-bold text-slate-900">{aiSummary.skippedAttachments?.length ?? 0}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Overview</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-700">{aiSummary.overview}</p>
+                      </article>
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Current Focus</p>
+                        <p className="mt-3 text-sm leading-7 text-slate-700">{aiSummary.currentFocus}</p>
+                      </article>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Visit Timeline</p>
+                        <div className="mt-3">
+                          <SummaryBulletList items={aiSummary.visitTimeline} />
+                        </div>
+                      </article>
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Medication Highlights</p>
+                        <div className="mt-3">
+                          <SummaryBulletList items={aiSummary.medicationHighlights} />
+                        </div>
+                      </article>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-3">
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4 xl:col-span-2">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Attachment Highlights</p>
+                        <div className="mt-3 space-y-3">
+                          {(aiSummary.attachmentHighlights ?? []).length > 0 ? (
+                            (aiSummary.attachmentHighlights ?? []).map((item) => (
+                              <div key={`${item.attachmentId}-${item.filename}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p className="text-sm font-semibold text-slate-900">{item.filename}</p>
+                                <p className="mt-1 text-sm leading-6 text-slate-600">{item.summary}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">No attachment insights available yet.</p>
+                          )}
+                        </div>
+                      </article>
+                      <article className="space-y-4">
+                        <div className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Risks</p>
+                          <div className="mt-3">
+                            <SummaryBulletList items={aiSummary.risks} tone="warning" />
+                          </div>
+                        </div>
+                        <div className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Next Steps</p>
+                          <div className="mt-3">
+                            <SummaryBulletList items={aiSummary.nextSteps} />
+                          </div>
+                        </div>
+                      </article>
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Questions For Next Visit</p>
+                        <div className="mt-3">
+                          <SummaryBulletList items={aiSummary.questionsForNextVisit} />
+                        </div>
+                      </article>
+                      <article className="rounded-[1.5rem] border border-slate-200 bg-white px-5 py-4">
+                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Analyzed File List</p>
+                        <div className="mt-3 space-y-2">
+                          {(aiSummary.analyzedAttachments ?? []).length > 0 ? (
+                            (aiSummary.analyzedAttachments ?? []).map((item) => (
+                              <div key={`${item.attachmentId}-${item.filename}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                <p className="text-sm font-semibold text-slate-900">{item.filename}</p>
+                                <p className="mt-1 text-xs text-slate-500">{item.contentType}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">No files were analyzed.</p>
+                          )}
+                        </div>
+                        {(aiSummary.skippedAttachments ?? []).length > 0 && (
+                          <div className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-amber-50 px-4 py-3">
+                            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Skipped Files</p>
+                            <ul className="mt-2 space-y-2 text-sm text-amber-800">
+                              {aiSummary.skippedAttachments.map((item) => (
+                                <li key={`${item.attachmentId}-${item.filename}`}>
+                                  <span className="font-semibold">{item.filename}</span>
+                                  {' '}
+                                  •
+                                  {' '}
+                                  {item.reason}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </article>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
             <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
               <div className="space-y-5">
                 <section className="rounded-[1.75rem] border border-white/80 bg-white/85 p-5 shadow-sm">

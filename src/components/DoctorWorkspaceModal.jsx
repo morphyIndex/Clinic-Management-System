@@ -608,7 +608,7 @@ export default function DoctorWorkspacePanel({ selectedRecord, onRecordUpdated }
                 </div>
               ) : (
                 <label className="space-y-1.5 block w-full justify-between items-center">
-                  <span className="text-sm font-bold text-slate-700">Consultation Fee</span>
+                  <div className="text-sm font-bold text-slate-700">Consultation Fee</div>
                   <input
                     type="number"
                     min="0"

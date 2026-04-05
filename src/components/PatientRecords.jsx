@@ -32,6 +32,7 @@ const initialPatientForm = {
 
 const ALLOWED_ATTACHMENT_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg']);
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const RECORDS_TIMEZONE = 'Asia/Yangon';
 
 function buildQueryString(search) {
   const params = new URLSearchParams({
@@ -73,6 +74,7 @@ function formatDateTime(value) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: RECORDS_TIMEZONE,
   }).format(new Date(value));
 }
 

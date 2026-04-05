@@ -42,6 +42,7 @@ function formatAppointmentTime(value) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: CALENDAR_TIMEZONE,
   }).format(new Date(value));
 }
 
@@ -53,6 +54,7 @@ function formatTelegramExpiry(value) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: CALENDAR_TIMEZONE,
   }).format(new Date(value));
 }
 

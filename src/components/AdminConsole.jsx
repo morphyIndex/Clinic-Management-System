@@ -663,7 +663,7 @@ function ClinicAdminConsole() {
                           {toTimeString(schedule.startMinute)} - {toTimeString(schedule.endMinute)}
                         </td>
                         <td className="p-4 text-slate-600">{schedule.slotDurationMinutes} min</td>
-                        <td className="p-4 text-slate-600">{schedule.timezone || 'Asia/Bangkok'}</td>
+                        <td className="p-4 text-slate-600">{schedule.timezone || 'Asia/Yangon'}</td>
                       </tr>
                     );
                   })}

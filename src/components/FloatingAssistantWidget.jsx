@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+const CHAT_TIMEZONE = 'Asia/Yangon';
+
 function getFloatingPortalRoot() {
   if (typeof document === 'undefined') {
     return null;
@@ -43,6 +45,7 @@ function formatChatTime(value) {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: CHAT_TIMEZONE,
   }).format(new Date(value));
 }
 

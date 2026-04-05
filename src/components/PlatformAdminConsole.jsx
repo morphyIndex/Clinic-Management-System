@@ -12,7 +12,7 @@ const defaultTenantForm = {
   contactEmail: '',
   contactPhone: '',
   address: '',
-  timezone: 'Asia/Bangkok',
+  timezone: 'Asia/Yangon',
 };
 
 const defaultUserForm = {
@@ -158,7 +158,7 @@ export default function PlatformAdminConsole() {
       contactEmail: tenant.contactEmail ?? '',
       contactPhone: tenant.contactPhone ?? '',
       address: tenant.address ?? '',
-      timezone: tenant.timezone ?? 'Asia/Bangkok',
+      timezone: tenant.timezone ?? 'Asia/Yangon',
     });
     setTenantError('');
     setIsTenantModalOpen(true);
@@ -325,7 +325,7 @@ export default function PlatformAdminConsole() {
                   <div className="mt-4 space-y-2 text-sm text-slate-500">
                     <p>{tenant.contactEmail || 'No contact email'}</p>
                     <p>{tenant.contactPhone || 'No contact phone'}</p>
-                    <p>{tenant.timezone || 'Asia/Bangkok'}</p>
+                    <p>{tenant.timezone || 'Asia/Yangon'}</p>
                   </div>
                 </div>
                 <span

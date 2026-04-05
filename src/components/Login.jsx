@@ -123,7 +123,13 @@ export default function Login() {
             <div>
               <div className="flex justify-between mb-2">
                 <label className="text-sm font-bold text-slate-700">Password</label>
-                <span className="text-sm font-bold text-indigo-600">Secure login</span>
+                <Link
+                  to="/recover-password"
+                  state={{ email: credentials.email }}
+                  className="text-sm font-bold text-indigo-600 hover:underline"
+                >
+                  Forgot password?
+                </Link>
               </div>
               <input
                 required

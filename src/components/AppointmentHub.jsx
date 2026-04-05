@@ -28,6 +28,7 @@ const initialBookingState = {
 
 const CALENDAR_DAY_COUNT = 30;
 const CALENDAR_TIMEZONE = DEFAULT_TIMEZONE;
+const ACTIVE_APPOINTMENT_STATUSES = new Set(['scheduled', 'confirmed', 'checked_in']);
 
 function getErrorMessage(error, fallbackMessage) {
   return isApiError(error) ? error.message : fallbackMessage;
@@ -172,6 +173,30 @@ function groupAppointmentsByDay(appointments) {
   return Array.from(groups.entries());
 }
 
+function getAppointmentTimestamp(appointment) {
+  const timestamp = new Date(appointment?.scheduledAt).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isUpcomingAppointment(appointment, referenceTime = Date.now()) {
+  const appointmentTime = getAppointmentTimestamp(appointment);
+  if (appointmentTime === null) {
+    return false;
+  }
+
+  return ACTIVE_APPOINTMENT_STATUSES.has(String(appointment?.status ?? '').trim()) && appointmentTime >= referenceTime;
+}
+
+function sortAppointmentsByScheduledAt(appointments, direction = 'asc') {
+  const multiplier = direction === 'desc' ? -1 : 1;
+
+  return [...appointments].sort((left, right) => {
+    const leftTime = getAppointmentTimestamp(left) ?? 0;
+    const rightTime = getAppointmentTimestamp(right) ?? 0;
+    return (leftTime - rightTime) * multiplier;
+  });
+}
+
 function createChatMessage(role, title, message) {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -229,6 +254,7 @@ export default function AppointmentHub() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [pendingBooking, setPendingBooking] = useState(null);
   const [isBookingSubmitting, setIsBookingSubmitting] = useState(false);
+  const [referenceTime, setReferenceTime] = useState(() => Date.now());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -300,6 +326,16 @@ export default function AppointmentHub() {
       controller.abort();
     };
   }, [request, user?.email]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setReferenceTime(Date.now());
+    }, 60000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const selectedDepartment = useMemo(
     () => departments.find((department) => department._id === bookingForm.departmentId) ?? null,
@@ -430,8 +466,20 @@ export default function AppointmentHub() {
     }
   }, [calendarDays, calendarTimeZone, selectedDateKey, selectedSlot, slotsByDay]);
 
-  const upcomingAppointments = useMemo(() => appointments.slice(0, 6), [appointments]);
+  const upcomingAppointments = useMemo(
+    () => sortAppointmentsByScheduledAt(appointments.filter((appointment) => isUpcomingAppointment(appointment, referenceTime))),
+    [appointments, referenceTime],
+  );
+  const appointmentHistory = useMemo(
+    () =>
+      sortAppointmentsByScheduledAt(
+        appointments.filter((appointment) => !isUpcomingAppointment(appointment, referenceTime)),
+        'desc',
+      ),
+    [appointments, referenceTime],
+  );
   const appointmentGroups = useMemo(() => groupAppointmentsByDay(upcomingAppointments), [upcomingAppointments]);
+  const appointmentHistoryGroups = useMemo(() => groupAppointmentsByDay(appointmentHistory), [appointmentHistory]);
   useEffect(() => {
     if (!telegramConnection?.connectUrl || telegramConnection.connected) {
       return undefined;
@@ -1034,7 +1082,7 @@ export default function AppointmentHub() {
           <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm sticky top-28">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Upcoming Visits</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-900">My appointments</h2>
-            <p className="mt-2 text-sm text-slate-500">Your upcoming appointments are as follows:</p>
+            <p className="mt-2 text-sm text-slate-500">Only your future scheduled visits appear in this section.</p>
 
             <div className="mt-6 space-y-4">
               {appointmentGroups.map(([dayLabel, dayAppointments]) => (
@@ -1047,7 +1095,7 @@ export default function AppointmentHub() {
                           <div>
                             <p className="font-semibold text-slate-900">{appointment.departmentName || appointment.reason || 'Appointment'}</p>
                             <p className="mt-1 text-sm text-slate-500">
-                              {appointment.doctorName || 'Doctor unavailable'} • {appointment.status}
+                              {appointment.doctorName || 'Doctor unavailable'} &middot; {appointment.status}
                             </p>
                           </div>
                           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
@@ -1063,10 +1111,52 @@ export default function AppointmentHub() {
 
               {upcomingAppointments.length === 0 && (
                 <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-                  No appointments yet. Use the assistant or booking form to reserve your first slot.
+                  No upcoming appointments right now. Use the assistant or booking form to reserve your next slot.
                 </div>
               )}
             </div>
+
+            {appointmentHistory.length > 0 && (
+              <div className="mt-8 border-t border-slate-100 pt-6">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Appointment History</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {appointmentHistory.length} completed or past appointment{appointmentHistory.length !== 1 ? 's' : ''}.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-4">
+                  {appointmentHistoryGroups.map(([dayLabel, dayAppointments]) => (
+                    <div key={dayLabel}>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{dayLabel}</p>
+                      <div className="mt-3 space-y-3">
+                        {dayAppointments.map((appointment) => (
+                          <div key={appointment._id} className="rounded-2xl border border-slate-100 bg-slate-50/50 p-4 opacity-75">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-slate-700">
+                                  {appointment.departmentName || appointment.reason || 'Appointment'}
+                                </p>
+                                <p className="mt-1 text-sm text-slate-400">
+                                  {appointment.doctorName || 'Doctor unavailable'} &middot;{' '}
+                                  <span className={appointment.status === 'cancelled' ? 'text-red-400' : 'text-emerald-500'}>
+                                    {appointment.status}
+                                  </span>
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">
+                                {appointment.reference}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm text-slate-400">{formatAppointmentTime(appointment.scheduledAt)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
       </div>

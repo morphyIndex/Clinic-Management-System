@@ -12,6 +12,7 @@ import Security from './components/Security.jsx';
 import PrivacyPolicy from './components/PrivacyPolicy.jsx';
 import TermsOfService from './components/TermsOfService.jsx';
 import Login from './components/Login.jsx';
+import PasswordRecovery from './components/PasswordRecovery.jsx';
 import RoleRoute from './components/RoleRoute.jsx';
 import AppointmentHub from './components/AppointmentHub.jsx';
 import AdminConsole from './components/AdminConsole.jsx';
@@ -25,7 +26,10 @@ import CallToAction from './components/CallToAction.jsx';
 
 function App() {
   const location = useLocation();
-  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+  const isAuthPage =
+    location.pathname === '/login' ||
+    location.pathname === '/register' ||
+    location.pathname === '/recover-password';
 
   return (
     <div className="min-h-screen font-sans text-slate-900 antialiased flex flex-col">
@@ -47,6 +51,7 @@ function App() {
             }
           />
           <Route path="/login" element={<Login />} />
+          <Route path="/recover-password" element={<PasswordRecovery />} />
           <Route path="/register" element={<Register />} />
           <Route
             path="/records"
